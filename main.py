@@ -3,12 +3,10 @@ from flask import Flask, request, jsonify
 import speech_recognition as sr
 import logging
 import io
+from google.oauth2 import service_account
 from gtts import gTTS
-from playsound import playsound
-import pygame
-from google.cloud import dialogflow
 import uuid
-
+from google.cloud import dialogflow
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -52,52 +50,59 @@ def text_to_speech():
     text = data['text']
     try:
         tts = gTTS(text=text, lang='ko')
-        filename = "output.mp3"
+        filename = f"output_{uuid.uuid4()}.mp3"
         tts.save(filename)
 
         if not os.path.exists(filename):
             return jsonify({"error": "File not found after saving"}), 500
 
-        # Initialize pygame mixer
-        pygame.mixer.init()
-        pygame.mixer.music.load(filename)
-        pygame.mixer.music.play()
-
-        # Wait for the audio to finish playing
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
-
-        # Unload the music and delete the file
-        pygame.mixer.music.unload()
-        os.remove(filename)
-
-        return jsonify({"message": "Text has been converted to speech and played"}), 200
+        # Return the full path of the file
+        return jsonify({"filename": os.path.abspath(filename)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/send-message', methods=['POST'])
 def send_message():
-    # Dialogflow 세션 클라이언트 설정
-    session_client = dialogflow.SessionsClient()
+    try:
+        # Load credentials explicitly
+        credentials = service_account.Credentials.from_service_account_file(
+            r'E:\kioskdialouge-2c40828c055f.json')
 
-    # 요청에서 메시지 추출
-    message = request.json['message']
+        # Dialogflow 세션 클라이언트 설정
+        session_client = dialogflow.SessionsClient(credentials=credentials)
+    except Exception as e:
+        app.logger.error("Failed to create Dialogflow session client: %s", e)
+        return jsonify({"error": "Failed to connect to Dialogflow"}), 500
 
-    # Dialogflow 세션 ID와 프로젝트 ID 설정
-    project_id = 'kioskdialouge'
-    # UUID를 생성하여 세션 ID로 사용
-    session_id = str(uuid.uuid4())
-    session = session_client.session_path(project_id, session_id)
+    try:
+        # 요청에서 메시지 추출
+        request_data = request.json
+        message = request_data['message']
+        session_id = request_data['session_id']
 
-    # 텍스트 입력 설정
-    text_input = dialogflow.TextInput(text=message, language_code="ko-KR")
-    query_input = dialogflow.QueryInput(text=text_input)
+        # Dialogflow 세션 ID와 프로젝트 ID 설정
+        project_id = 'kioskdialouge'
+        session = session_client.session_path(project_id, session_id)
 
-    # Dialogflow에 요청 보내기
-    response = session_client.detect_intent(session=session, query_input=query_input)
-    response_text = response.query_result.fulfillment_text
+        # 텍스트 입력 설정
+        text_input = dialogflow.TextInput(text=message, language_code="ko-KR")
+        query_input = dialogflow.QueryInput(text=text_input)
 
-    return jsonify({'reply': response_text})
+        # Dialogflow에 요청 보내기
+        response = session_client.detect_intent(session=session, query_input=query_input)
+
+        if response.query_result.fulfillment_text:
+            response_text = response.query_result.fulfillment_text
+        else:
+            response_text = "Dialogflow did not return a response."
+
+        return jsonify({'reply': response_text, 'session_id': session_id})
+    except KeyError:
+        app.logger.error("Invalid request: 'message' or 'session_id' field is missing")
+        return jsonify({"error": "Invalid request: 'message' or 'session_id' field is missing"}), 400
+    except Exception as e:
+        app.logger.error("Failed to communicate with Dialogflow: %s", e)
+        return jsonify({"error": f"Failed to communicate with Dialogflow: {e}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
