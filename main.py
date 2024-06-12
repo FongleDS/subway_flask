@@ -96,13 +96,92 @@ def send_message():
         else:
             response_text = "Dialogflow did not return a response."
 
-        return jsonify({'reply': response_text, 'session_id': session_id})
+        # 현재 단계 확인 및 업데이트
+        if 'step' not in session:
+            session['step'] = 1
+
+        redirect_url = None
+        if response_text != "이해하지 못했어요. 다시 한 번 말씀해주시겠어요?":
+            session['step'] += 1
+
+        if session['step'] == 1:
+            redirect_url = url_for('sandwich')
+        elif session['step'] == 2:
+            redirect_url = url_for('bread')
+        elif session['step'] == 3:
+            redirect_url = url_for('vege')
+        elif session['step'] == 4:
+            redirect_url = url_for('side')
+        elif session['step'] == 5:
+            redirect_url = url_for('sc')
+        elif session['step'] == 6:
+            redirect_url = url_for('add')
+        elif session['step'] == 7:
+            redirect_url = url_for('check')
+        elif session['step'] == 8:
+            redirect_url = url_for('payment')
+        else:
+            session['step'] = 1  # 다시 처음으로
+
+
+        return jsonify({'reply': response_text, 'session_id': session_id, 'redirect': redirect_url})
+
+
     except KeyError:
         app.logger.error("Invalid request: 'message' or 'session_id' field is missing")
         return jsonify({"error": "Invalid request: 'message' or 'session_id' field is missing"}), 400
     except Exception as e:
         app.logger.error("Failed to communicate with Dialogflow: %s", e)
         return jsonify({"error": f"Failed to communicate with Dialogflow: {e}"}), 500
+
+@app.route("/add")
+def add():
+    return render_template('add.html')
+
+@app.route("/bread")
+def bread():
+    return render_template('bread.html')
+
+@app.route("/check")
+def check():
+    return render_template('check.html')
+
+@app.route("/credit")
+def credit():
+    return render_template('credit.html')
+
+@app.route("/dialog")
+def dialog():
+    return render_template('dialog.html')
+
+@app.route("/lastpage")
+def lastpage():
+    return render_template('lastpage.html')
+
+@app.route("/mainpage")
+def mainpage():
+    return render_template('mainpage.html')
+
+@app.route("/payment")
+def payment():
+    return render_template('payment.html')
+
+@app.route("/sandwich")
+def sandwich():
+    return render_template('sandwich.html')
+
+@app.route("/sc")
+def sc():
+    return render_template('sc.html')
+
+@app.route("/side")
+def side():
+    return render_template('side.html')
+
+@app.route("/vege")
+def vege():
+    return render_template('vege.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
